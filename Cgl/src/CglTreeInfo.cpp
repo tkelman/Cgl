@@ -20,7 +20,7 @@
 
 // Default constructor 
 CglTreeInfo::CglTreeInfo ()
-  : level(-1), pass(-1), formulation_rows(-1), inTree(false),
+  : level(-1), pass(-1), formulation_rows(-1), options(0), inTree(false),
     strengthenRow(NULL),randomNumberGenerator(NULL) {}
 
 // Copy constructor 
@@ -28,6 +28,7 @@ CglTreeInfo::CglTreeInfo (const CglTreeInfo & rhs)
   : level(rhs.level), 
     pass(rhs.pass), 
     formulation_rows(rhs.formulation_rows), 
+    options(rhs.options),
     inTree(rhs.inTree),
     strengthenRow(rhs.strengthenRow),
     randomNumberGenerator(rhs.randomNumberGenerator)
@@ -49,6 +50,7 @@ CglTreeInfo::operator=(const CglTreeInfo& rhs)
     level = rhs.level; 
     pass = rhs.pass; 
     formulation_rows = rhs.formulation_rows; 
+    options = rhs.options;
     inTree = rhs.inTree;
     strengthenRow = rhs.strengthenRow;
     randomNumberGenerator = rhs.randomNumberGenerator;
@@ -227,7 +229,7 @@ static int outDupsEtc(int numberIntegers, int & numberCliques, int & numberMatri
     int n = cliqueStart[iClique+1]-j;
     for (int i=0;i<n;i++) 
       whichP[i]=entry[i+j].sequence;
-    CoinSort_2(whichP,whichP+n,((int *)entry)+j);
+    CoinSort_2(whichP,whichP+n,(reinterpret_cast<int *>(entry))+j);
   }
   // lexicographic sort
   int * which = new int [numberCliques];
@@ -334,7 +336,7 @@ static int outDupsEtc(int numberIntegers, int & numberCliques, int & numberMatri
 	  startLooking++;
 	continue;
       } else {
-	if (kValue>(int) entry[cliqueStart[iClique+1]-1].sequence) {
+	if (kValue>static_cast<int> (entry[cliqueStart[iClique+1]-1].sequence)) {
 	  value[iClique]=numberIntegers;
 	  continue;
 	}
@@ -535,8 +537,8 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	  whichM[numberM1++]=iColumn;
 	}
       }
-      int iUpper = (int) floor(upperValue+1.0e-5);
-      int iLower = (int) ceil(lowerValue-1.0e-5);
+      int iUpper = static_cast<int> (floor(upperValue+1.0e-5));
+      int iLower = static_cast<int> (ceil(lowerValue-1.0e-5));
       int state=0;
       if (upperValue<1.0e6) {
 	if (iUpper==1-numberM1)
@@ -545,7 +547,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	  state=2;
 	else if (iUpper<-numberM1)
 	  state=3;
-	if (fabs(((double) iUpper)-upperValue)>1.0e-9)
+	if (fabs(static_cast<double> (iUpper)-upperValue)>1.0e-9)
 	  state =-1;
       }
       if (!state&&lowerValue>-1.0e6) {
@@ -555,7 +557,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	  state=-2;
 	else if (-iLower<-numberP1)
 	  state=-3;
-	if (fabs(((double) iLower)-lowerValue)>1.0e-9)
+	if (fabs(static_cast<double> (iLower)-lowerValue)>1.0e-9)
 	  state =-1;
       }
       if (numberP1+numberM1<2)
@@ -576,7 +578,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	    if (iPass) {
 	      cliqueEntry2 temp;
 	      temp.oneFixes=1;
-	      temp.sequence=iColumn;
+	      temp.sequence=(iColumn&0x7fffffff);
 	      entry[numberEntries]=temp;
 	    }
 	    numberEntries++;
@@ -586,7 +588,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	    if (iPass) {
 	      cliqueEntry2 temp;
 	      temp.oneFixes=0;
-	      temp.sequence=iColumn;
+	      temp.sequence=(iColumn&0x7fffffff);
 	      entry[numberEntries]=temp;
 	    }
 	    numberEntries++;
@@ -611,7 +613,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
     //memset(used,0,size);
     // find two cliques
     int nFix=0;
-    for (int iColumn=0;iColumn<(int) numberIntegers_;iColumn++) {
+    for (int iColumn=0;iColumn<static_cast<int> (numberIntegers_);iColumn++) {
       int j;
       for ( j=toZero_[iColumn];j<toOne_[iColumn];j++) {
 	int jColumn=fixEntry_[j].sequence;
@@ -619,7 +621,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	if (jColumn<iColumn) {
 	  int k;
 	  for ( k=toZero_[jColumn];k<toOne_[jColumn];k++) {
-	    if (fixEntry_[k].sequence== (unsigned int) iColumn) {
+	    if (fixEntry_[k].sequence== static_cast<unsigned int> (iColumn)) {
 	      if (fixEntry_[j].oneFixed) {
 		if (fixEntry_[k].oneFixed) {
 		  if (printit&&!iPass)
@@ -629,14 +631,14 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 		  if (iPass) {
 		    cliqueEntry2 temp;
 		    temp.oneFixes=0;
-		    temp.sequence=iColumn;
+		    temp.sequence=(iColumn&0x7fffffff);
 		    entry[numberEntries]=temp;
 		  }
 		  numberEntries++;
 		  if (iPass) {
 		    cliqueEntry2 temp;
 		    temp.oneFixes=0;
-		    temp.sequence=jColumn;
+		    temp.sequence=(jColumn&0x7fffffff);
 		    entry[numberEntries]=temp;
 		  }
 		  numberEntries++;
@@ -668,7 +670,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	    }
 	  }
 	  for ( k=toOne_[jColumn];k<toZero_[jColumn+1];k++) {
-	    if (fixEntry_[k].sequence== (unsigned int) iColumn) {
+	    if (fixEntry_[k].sequence== static_cast<unsigned int> (iColumn)) {
 	      if (fixEntry_[j].oneFixed) {
 		if (fixEntry_[k].oneFixed) {
 		  if (printit&&!iPass)
@@ -690,14 +692,14 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 		  if (iPass) {
 		    cliqueEntry2 temp;
 		    temp.oneFixes=0;
-		    temp.sequence=iColumn;
+		    temp.sequence=(iColumn&0x7fffffff);
 		    entry[numberEntries]=temp;
 		  }
 		  numberEntries++;
 		  if (iPass) {
 		    cliqueEntry2 temp;
 		    temp.oneFixes=1;
-		    temp.sequence=jColumn;
+		    temp.sequence=(jColumn&0x7fffffff);
 		    entry[numberEntries]=temp;
 		  }
 		  numberEntries++;
@@ -723,7 +725,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	if (jColumn<iColumn) {
 	  int k;
 	  for ( k=toZero_[jColumn];k<toOne_[jColumn];k++) {
-	    if (fixEntry_[k].sequence== (unsigned int) iColumn) {
+	    if (fixEntry_[k].sequence== static_cast<unsigned int> (iColumn)) {
 	      if (fixEntry_[j].oneFixed) {
 		if (fixEntry_[k].oneFixed) {
 		  if (printit&&!iPass)
@@ -738,14 +740,14 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 		  if (iPass) {
 		    cliqueEntry2 temp;
 		    temp.oneFixes=1;
-		    temp.sequence=iColumn;
+		    temp.sequence=(iColumn&0x7fffffff);
 		    entry[numberEntries]=temp;
 		  }
 		  numberEntries++;
 		  if (iPass) {
 		    cliqueEntry2 temp;
 		    temp.oneFixes=0;
-		    temp.sequence=jColumn;
+		    temp.sequence=(jColumn&0x7fffffff);
 		    entry[numberEntries]=temp;
 		  }
 		  numberEntries++;
@@ -772,7 +774,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	    }
 	  }
 	  for ( k=toOne_[jColumn];k<toZero_[jColumn+1];k++) {
-	    if (fixEntry_[k].sequence== (unsigned int) iColumn) {
+	    if (fixEntry_[k].sequence== static_cast<unsigned int> (iColumn)) {
 	      if (fixEntry_[j].oneFixed) {
 		if (fixEntry_[k].oneFixed) {
 		  if (printit&&!iPass)
@@ -799,14 +801,14 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 		  if (iPass) {
 		    cliqueEntry2 temp;
 		    temp.oneFixes=1;
-		    temp.sequence=iColumn;
+		    temp.sequence=(iColumn&0x7fffffff);
 		    entry[numberEntries]=temp;
 		  }
 		  numberEntries++;
 		  if (iPass) {
 		    cliqueEntry2 temp;
 		    temp.oneFixes=1;
-		    temp.sequence=jColumn;
+		    temp.sequence=(jColumn&0x7fffffff);
 		    entry[numberEntries]=temp;
 		  }
 		  numberEntries++;
@@ -852,7 +854,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
     CoinZeroN(oneCount,numberIntegers_);
     for (iClique=0;iClique<numberCliques;iClique++) {
       for (int j=cliqueStart[iClique];j<cliqueStart[iClique+1];j++) {
-	int iColumn = (int) entry[j].sequence;
+	int iColumn = static_cast<int> (entry[j].sequence);
 	if (entry[j].oneFixes) {
 	  oneCount[iColumn]++;
 	} else {
@@ -874,7 +876,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
     }
     for (iClique=0;iClique<numberCliques;iClique++) {
       for (int j=cliqueStart[iClique];j<cliqueStart[iClique+1];j++) {
-	int iColumn = (int) entry[j].sequence;
+	int iColumn = static_cast<int> (entry[j].sequence);
 	if (entry[j].oneFixes) {
 	  int k=oneCount[iColumn];
 	  oneCount[iColumn]++;
@@ -962,7 +964,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	    cliqueType=tempT;
 	  }
 	  cliqueEntry2 eI;
-	  eI.sequence=iColumn;
+	  eI.sequence=(iColumn&0x7fffffff);
 	  eI.oneFixes=0;
 	  entry[numberEntries++]=eI;
 	  whichM[0]=iColumn;
@@ -971,7 +973,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	    entry[numberEntries++]=entry[i];
 	    whichM[n++]=entry[i].sequence;
 	  }
-	  CoinSort_2(whichM,whichM+n,((int *)entry)+numberEntries-n);
+	  CoinSort_2(whichM,whichM+n,(reinterpret_cast<int *>(entry))+numberEntries-n);
 	  cliqueType[numberCliques]='S';
 	  numberCliques++;
 	  cliqueStart[numberCliques]=numberEntries;
@@ -1050,7 +1052,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	    cliqueType=tempT;
 	  }
 	  cliqueEntry2 eI;
-	  eI.sequence=iColumn;
+	  eI.sequence=(iColumn&0x7fffffff);
 	  eI.oneFixes=1;
 	  entry[numberEntries++]=eI;
 	  whichM[0]=iColumn;
@@ -1059,7 +1061,7 @@ CglTreeProbingInfo::analyze(const OsiSolverInterface & si,int createSolver)
 	    entry[numberEntries++]=entry[i];
 	    whichM[n++]=entry[i].sequence;
 	  }
-	  CoinSort_2(whichM,whichM+n,((int *)entry)+numberEntries-n);
+	  CoinSort_2(whichM,whichM+n,(reinterpret_cast<int *>(entry))+numberEntries-n);
 	  cliqueType[numberCliques]='S';
 	  numberCliques++;
 	  cliqueStart[numberCliques]=numberEntries;
@@ -1182,8 +1184,8 @@ CglTreeProbingInfo::fixes(int variable, int toValue, int fixedVariable,bool fixe
     fixingEntry_ = temp2;
   }
   fixEntry entry1;
-  entry1.oneFixed=fixedTo;
-  entry1.sequence=intFix;
+  entry1.oneFixed=fixedTo&1;
+  entry1.sequence=(intFix&0x7fffffff);
   fixEntry_[numberEntries_] = entry1;
   assert (toValue==-1||toValue==1);
   assert (fixedTo==0||fixedTo==1);
@@ -1257,9 +1259,10 @@ CglTreeProbingInfo::convert() const
       if (n>last) {
 	// sort
 	assert (sizeof(int)==4);
-	std::sort((unsigned int *) fixEntry_+last,(unsigned int *) fixEntry_+n);
+	std::sort(reinterpret_cast<unsigned int *> (fixEntry_)+last,
+		  reinterpret_cast<unsigned int *> (fixEntry_)+n);
 	fixEntry temp2;
-	temp2.sequence=numberVariables_+1;
+	temp2.sequence=(numberVariables_+1)&0x7fffffff;
 	for (int i=last;i<n;i++) {
 	  if (temp2.sequence!=fixEntry_[i].sequence||temp2.oneFixed||fixEntry_[i].oneFixed) {
 	    temp2 = fixEntry_[i];
@@ -1278,9 +1281,10 @@ CglTreeProbingInfo::convert() const
       if (n>last) {
 	// sort
 	assert (sizeof(int)==4);
-	std::sort((unsigned int *) fixEntry_+last,(unsigned int *) fixEntry_+n);
+	std::sort(reinterpret_cast<unsigned int *> (fixEntry_)+last,
+		  reinterpret_cast<unsigned int *> (fixEntry_)+n);
 	fixEntry temp2;
-	temp2.sequence=numberVariables_+1;
+	temp2.sequence=(numberVariables_+1)&0x7fffffff;
 	for (int i=last;i<n;i++) {
 	  if (temp2.sequence!=fixEntry_[i].sequence||temp2.oneFixed||fixEntry_[i].oneFixed) {
 	    temp2 = fixEntry_[i];
@@ -1304,7 +1308,7 @@ CglTreeProbingInfo::fixColumns(OsiSolverInterface & si) const
   const double * lower = si.getColLower();
   const double * upper = si.getColUpper();
   bool feasible=true;
-  for (int jColumn=0;jColumn<(int) numberIntegers_;jColumn++) {
+  for (int jColumn=0;jColumn<static_cast<int> (numberIntegers_);jColumn++) {
     int iColumn = integerVariable_[jColumn];
     if (upper[iColumn]==0.0) {
       int j;
@@ -1372,6 +1376,82 @@ CglTreeProbingInfo::fixColumns(OsiSolverInterface & si) const
   }
   return nFix;
 }
+// Fix entries in a solver using implications for one variable
+int 
+CglTreeProbingInfo::fixColumns(int iColumn,int value, OsiSolverInterface & si) const
+{
+  assert (value==0||value==1);
+  int nFix=0;
+  const double * lower = si.getColLower();
+  const double * upper = si.getColUpper();
+  bool feasible=true;
+  int jColumn = backward_[iColumn];
+  assert (jColumn>=0);
+  if (!value) {
+    int j;
+    for ( j=toZero_[jColumn];j<toOne_[jColumn];j++) {
+      int kColumn=fixEntry_[j].sequence;
+      kColumn = integerVariable_[kColumn];
+      bool fixToOne = fixEntry_[j].oneFixed;
+      if (fixToOne) {
+	if (lower[kColumn]==0.0) {
+	  if (upper[kColumn]==1.0) {
+	    si.setColLower(kColumn,1.0);
+	    nFix++;
+	  } else {
+	    // infeasible!
+	    feasible=false;
+	  }
+	}
+      } else {
+	if (upper[kColumn]==1.0) {
+	  if (lower[kColumn]==0.0) {
+	    si.setColUpper(kColumn,0.0);
+	    nFix++;
+	  } else {
+	    // infeasible!
+	    feasible=false;
+	  }
+	}
+      }
+    }
+  } else {
+    int j;
+    for ( j=toOne_[jColumn];j<toZero_[jColumn+1];j++) {
+      int kColumn=fixEntry_[j].sequence;
+      kColumn = integerVariable_[kColumn];
+      bool fixToOne = fixEntry_[j].oneFixed;
+      if (fixToOne) {
+	if (lower[kColumn]==0.0) {
+	  if (upper[kColumn]==1.0) {
+	    si.setColLower(kColumn,1.0);
+	    nFix++;
+	  } else {
+	    // infeasible!
+	    feasible=false;
+	  }
+	}
+      } else {
+	if (upper[kColumn]==1.0) {
+	  if (lower[kColumn]==0.0) {
+	    si.setColUpper(kColumn,0.0);
+	    nFix++;
+	  } else {
+	    // infeasible!
+	    feasible=false;
+	  }
+	}
+      }
+    }
+  }
+  if (!feasible) {
+#ifdef COIN_DEVELOP
+    printf("treeprobing says infeasible!\n");
+#endif
+    nFix=-1;
+  }
+  return nFix;
+}
 // Packs down entries
 int 
 CglTreeProbingInfo::packDown()
@@ -1379,7 +1459,7 @@ CglTreeProbingInfo::packDown()
   convert();
   int iPut=0;
   int iLast=0;
-  for (int jColumn=0;jColumn<(int) numberIntegers_;jColumn++) {
+  for (int jColumn=0;jColumn<static_cast<int> (numberIntegers_);jColumn++) {
     int j;
     for ( j=iLast;j<toOne_[jColumn];j++) {
       int kColumn=fixEntry_[j].sequence;
@@ -1405,7 +1485,11 @@ CglTreeProbingInfo::generateCuts(const OsiSolverInterface & si, OsiCuts & cs,
   const double * lower = si.getColLower();
   const double * upper = si.getColUpper();
   const double * colsol =si.getColSolution();
-  for (int jColumn=0;jColumn<(int) numberIntegers_;jColumn++) {
+  CoinPackedVector lbs(false);
+  CoinPackedVector ubs(false);
+  int numberFixed=0;
+  char * fixed = NULL;
+  for (int jColumn=0;jColumn<static_cast<int> (numberIntegers_);jColumn++) {
     int iColumn = integerVariable_[jColumn];
     assert (iColumn>=0&&iColumn<si.getNumCols());
     if (lower[iColumn]==0.0&&upper[iColumn]==1.0) {
@@ -1415,6 +1499,7 @@ CglTreeProbingInfo::generateCuts(const OsiSolverInterface & si, OsiCuts & cs,
 	int kColumn=fixEntry_[j].sequence;
 	kColumn = integerVariable_[kColumn];
 	assert (kColumn>=0&&kColumn<si.getNumCols());
+	assert (kColumn!=iColumn);
 	if (lower[kColumn]==0.0&&upper[kColumn]==1.0) {
 	  double value2 = colsol[kColumn];
 	  bool fixToOne = fixEntry_[j].oneFixed;
@@ -1453,6 +1538,7 @@ CglTreeProbingInfo::generateCuts(const OsiSolverInterface & si, OsiCuts & cs,
 	int kColumn=fixEntry_[j].sequence;
 	kColumn = integerVariable_[kColumn];
 	assert (kColumn>=0&&kColumn<si.getNumCols());
+	assert (kColumn!=iColumn);
 	if (lower[kColumn]==0.0&&upper[kColumn]==1.0) {
 	  double value2 = colsol[kColumn];
 	  bool fixToOne = fixEntry_[j].oneFixed;
@@ -1487,6 +1573,102 @@ CglTreeProbingInfo::generateCuts(const OsiSolverInterface & si, OsiCuts & cs,
 	  }
 	}
       }
+    } else if (upper[iColumn]==0.0) {
+      for (int j=toZero_[jColumn];j<toOne_[jColumn];j++) {
+	int kColumn01=fixEntry_[j].sequence;
+	int kColumn = integerVariable_[kColumn01];
+	assert (kColumn>=0&&kColumn<si.getNumCols());
+	bool fixToOne = fixEntry_[j].oneFixed;
+	if (lower[kColumn]==0.0&&upper[kColumn]==1.0) {
+	  if (!fixed) {
+	    fixed = new char [numberIntegers_];
+	    memset(fixed,0,numberIntegers_);
+	  }
+	  if (fixToOne) {
+	    if ((fixed[kColumn01]&1)==0) {
+	      fixed[kColumn01] |= 1;
+	      lbs.insert(kColumn,1.0);
+	    }
+	  } else {
+	    if ((fixed[kColumn01]&2)==0) {
+	      fixed[kColumn01] |= 2;
+	      ubs.insert(kColumn,0.0);
+	    }
+	  }
+	  numberFixed++;
+	} else if ((fixToOne&&upper[kColumn]==0.0)||
+		   (!fixToOne&&lower[kColumn]==1.0)) {
+	  // infeasible!
+	  // generate infeasible cut and return
+	  OsiRowCut rc;
+	  rc.setLb(DBL_MAX);
+	  rc.setUb(0.0);   
+	  cs.insert(rc);
+	  //printf("IMPINFEAS!\n");
+	  return;
+	}
+      }
+    } else {
+      for (int j=toOne_[jColumn];j<toZero_[jColumn+1];j++) {
+	int kColumn01=fixEntry_[j].sequence;
+	int kColumn = integerVariable_[kColumn01];
+	assert (kColumn>=0&&kColumn<si.getNumCols());
+	bool fixToOne = fixEntry_[j].oneFixed;
+	if (lower[kColumn]==0.0&&upper[kColumn]==1.0) {
+	  if (!fixed) {
+	    fixed = new char [numberIntegers_];
+	    memset(fixed,0,numberIntegers_);
+	  }
+	  if (fixToOne) {
+	    if ((fixed[kColumn01]&1)==0) {
+	      fixed[kColumn01] |= 1;
+	      lbs.insert(kColumn,1.0);
+	    }
+	  } else {
+	    if ((fixed[kColumn01]&2)==0) {
+	      fixed[kColumn01] |= 2;
+	      ubs.insert(kColumn,0.0);
+	    }
+	  }
+	  numberFixed++;
+	} else if ((fixToOne&&upper[kColumn]==0.0)||
+		   (!fixToOne&&lower[kColumn]==1.0)) {
+	  // infeasible!
+	  // generate infeasible cut and return
+	  OsiRowCut rc;
+	  rc.setLb(DBL_MAX);
+	  rc.setUb(0.0);   
+	  cs.insert(rc);
+	  //printf("IMPINFEAS!\n");
+	  return;
+	}
+      }
+    }
+  }
+  if (numberFixed) {
+    int feasible=true;
+    for (int i=0;i<numberIntegers_;i++) {
+      if (fixed[i]==3) {
+	feasible=false;
+	break;
+      }
+    }
+    delete [] fixed;
+    if (feasible) {
+      //printf("IMP fixed %d\n",numberFixed);
+      OsiColCut cc;
+      cc.setUbs(ubs);
+      cc.setLbs(lbs);
+      cc.setEffectiveness(1.0);
+      cs.insert(cc);
+    } else {
+      // infeasible!
+      // generate infeasible cut
+      OsiRowCut rc;
+      rc.setLb(DBL_MAX);
+      rc.setUb(0.0);   
+      cs.insert(rc);
+      //printf("IMPINFEAS!\n");
     }
   }
 }

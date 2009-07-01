@@ -213,6 +213,12 @@ static int makeIntegers2(OsiSolverInterface * model,int mode)
   const int * row = model->getMatrixByCol()->getIndices();
   const CoinBigIndex * columnStart = model->getMatrixByCol()->getVectorStarts();
   const int * columnLength = model->getMatrixByCol()->getVectorLengths();
+  // Row copy
+  CoinPackedMatrix matrixByRow(*model->getMatrixByRow());
+  //const double * elementByRow = matrixByRow.getElements();
+  const int * column = matrixByRow.getIndices();
+  const CoinBigIndex * rowStart = matrixByRow.getVectorStarts();
+  const int * rowLength = matrixByRow.getVectorLengths();
   int numberIntegers=1;
   int totalNumberIntegers=0;
   while (numberIntegers) {
@@ -279,16 +285,22 @@ static int makeIntegers2(OsiSolverInterface * model,int mode)
       }
     }
     int * newInts = new int[numberColumns];
+    // Columns to zap
+    int nColumnZap=0;
+    int * columnZap = new int[numberColumns];
+    char * noGoodColumn = new char [numberColumns];
+    memset(noGoodColumn,0,numberColumns);
     int nNew=0;
     for (iColumn=0;iColumn<numberColumns;iColumn++) {
       if (upper[iColumn]>lower[iColumn]) {
 	double objValue = objective[iColumn]*direction;
 	bool thisGood=true;
 	if ((objValue||makeAll)&&!model->isInteger(iColumn)) {
-	  if (objValue)
+	  if (objValue) {
 	    numberObj++;
-	  else if (columnLength[iColumn]==1)
+	  } else if (columnLength[iColumn]==1) {
 	    continue; // don't bother with singletons
+	  }
 	  CoinBigIndex start = columnStart[iColumn];
 	  CoinBigIndex end = start + columnLength[iColumn];
 	  if (objValue>=0.0) {
@@ -322,23 +334,32 @@ static int makeIntegers2(OsiSolverInterface * model,int mode)
 		    xxxx = 15;
 		}
 		nC++;
-	      }
-	      else if (rowLower[iRow]==rowUpper[iRow])
+	      } else if (rowLower[iRow]==rowUpper[iRow]) {
 		equality=true;
-	      if (fabs(rhs[iRow])>1.0e20||fabs(rhs[iRow]-floor(rhs[iRow]+0.5))>1.0e-10
+	      }
+	      double rhsValue = rhs[iRow];
+	      double lowerValue = rowLower[iRow];
+	      double upperValue = rowUpper[iRow];
+	      if (rhsValue<1.0e20) {
+		if(lowerValue>-1.0e20)
+		  lowerValue -= rhsValue;
+		if(upperValue<1.0e20)
+		  upperValue -= rhsValue;
+	      }
+	      if (fabs(rhsValue)>1.0e20||fabs(rhsValue-floor(rhsValue+0.5))>1.0e-10
 		  ||fabs(element[j])!=1.0) {
 		// no good
 		thisGood=false;
 		break;
 	      }
 	      if (element[j]>0.0) {
-		if (rowLower[iRow]>-1.0e20&&fabs(rowLower[iRow]-floor(rowLower[iRow]+0.5))>1.0e-10) {
+		if (lowerValue>-1.0e20&&fabs(lowerValue-floor(lowerValue+0.5))>1.0e-10) {
 		  // no good
 		  thisGood=false;
 		  break;
 		}
 	      } else {
-		if (rowUpper[iRow]<1.0e20&&fabs(rowUpper[iRow]-floor(rowUpper[iRow]+0.5))>1.0e-10) {
+		if (upperValue<1.0e20&&fabs(upperValue-floor(upperValue+0.5))>1.0e-10) {
 		  // no good
 		  thisGood=false;
 		  break;
@@ -377,24 +398,35 @@ static int makeIntegers2(OsiSolverInterface * model,int mode)
 	    bool equality=false;
 	    for (CoinBigIndex j=start;j<end;j++) {
 	      int iRow = row[j];
-	      if (count[iRow]>1)
+	      if (count[iRow]>1) {
 		singletonRow=false;
-	      else if (rowLower[iRow]==rowUpper[iRow])
+		thisGood=false;
+	      } else if (rowLower[iRow]==rowUpper[iRow]) {
 		equality=true;
-	      if (fabs(rhs[iRow])>1.0e20||fabs(rhs[iRow]-floor(rhs[iRow]+0.5))>1.0e-10
+	      }
+	      double rhsValue = rhs[iRow];
+	      double lowerValue = rowLower[iRow];
+	      double upperValue = rowUpper[iRow];
+	      if (rhsValue<1.0e20) {
+		if(lowerValue>-1.0e20)
+		  lowerValue -= rhsValue;
+		if(upperValue<1.0e20)
+		  upperValue -= rhsValue;
+	      }
+	      if (fabs(rhsValue)>1.0e20||fabs(rhsValue-floor(rhsValue+0.5))>1.0e-10
 		  ||fabs(element[j])!=1.0) {
 		// no good
 		thisGood=false;
 		break;
 	      }
 	      if (element[j]<0.0) {
-		if (rowLower[iRow]>-1.0e20&&fabs(rowLower[iRow]-floor(rowLower[iRow]+0.5))>1.0e-10) {
+		if (lowerValue>-1.0e20&&fabs(lowerValue-floor(lowerValue+0.5))>1.0e-10) {
 		  // no good
 		  thisGood=false;
 		  break;
 		}
 	      } else {
-		if (rowUpper[iRow]<1.0e20&&fabs(rowUpper[iRow]-floor(rowUpper[iRow]+0.5))>1.0e-10) {
+		if (upperValue<1.0e20&&fabs(upperValue-floor(upperValue+0.5))>1.0e-10) {
 		  // no good
 		  thisGood=false;
 		  break;
@@ -442,13 +474,63 @@ static int makeIntegers2(OsiSolverInterface * model,int mode)
 	if (!thisGood) {
 	  if (objValue)
 	    allGood=false;
+	  // look at again
+	  columnZap[nColumnZap++]=iColumn;
 	} else if (makeAll&&!model->isInteger(iColumn)&&
 		   upper[iColumn]-lower[iColumn]<10) {
-	  if (objValue)
-	    numberNonZero++;
-	  else
-	    numberZero++; 
 	  newInts[nNew++] = iColumn;
+	}
+      }
+    }
+    // Rows to look at
+    int * rowLook = new int[numberRows];
+    while (nColumnZap) {
+      int nRowLook=0;
+      for (int i=0;i<nColumnZap;i++) {
+	int iColumn=columnZap[i];
+	noGoodColumn[iColumn]=1;
+	CoinBigIndex start = columnStart[iColumn];
+	CoinBigIndex end = start + columnLength[iColumn];
+	for (CoinBigIndex j=start;j<end;j++) {
+	  int iRow = row[j];
+	  if (count[iRow]!=999999) {
+	    count[iRow]=999999;
+	    rowLook[nRowLook++]=iRow;
+	  }
+	}
+      }
+      nColumnZap=0;
+      if (nRowLook) {
+	for (int i=0;i<nRowLook;i++) {
+	  int iRow=rowLook[i];
+	  CoinBigIndex start = rowStart[iRow];
+	  CoinBigIndex end = start + rowLength[iRow];
+	  for (CoinBigIndex j=start;j<end;j++) {
+	    int iColumn = column[j];
+	    if (upper[iColumn]>lower[iColumn]&&
+		!model->isInteger(iColumn)) {
+	      if (!noGoodColumn[iColumn]) {
+		noGoodColumn[iColumn]=1;
+		columnZap[nColumnZap++]=iColumn;
+	      }
+	    }
+	  }
+	}
+      }
+    }
+    delete [] rowLook;
+    delete [] noGoodColumn;
+    delete [] columnZap;
+    // Final look
+    for (iColumn=0;iColumn<numberColumns;iColumn++) {
+      if (upper[iColumn]>lower[iColumn]&&
+	  !model->isInteger(iColumn)&&objective[iColumn]) {
+	CoinBigIndex start = columnStart[iColumn];
+	CoinBigIndex end = start + columnLength[iColumn];
+	for (CoinBigIndex j=start;j<end;j++) {
+	  int iRow = row[j];
+	  if (count[iRow]==999999) 
+	    allGood=false;
 	}
       }
     }
@@ -456,11 +538,28 @@ static int makeIntegers2(OsiSolverInterface * model,int mode)
     if (nNew&&nNew<currentNumber) {
       for (int i=0;i<nNew;i++) {
 	int iColumn = newInts[i];
-	model->setInteger(iColumn);
+	double objValue = objective[iColumn];
+	bool thisGood=true;
+	CoinBigIndex start = columnStart[iColumn];
+	CoinBigIndex end = start + columnLength[iColumn];
+	for (CoinBigIndex j=start;j<end;j++) {
+	  int iRow = row[j];
+	  if (count[iRow]==999999) {
+	    thisGood=false;
+	    break;
+	  }
+	} 
+	if (thisGood&&upper[iColumn]<lower[iColumn]+10.0) {
+	  model->setInteger(iColumn);
+	  if (objValue)
+	    numberNonZero++;
+	  else
+	    numberZero++; 
+	} else if (objValue) {
+	  // unable to fix all with obj
+	  allGood=false;
+	}
       }
-    } else {
-      numberNonZero=0;
-      numberZero=0;
     }
     delete [] newInts;
     // Can we look at remainder and make any integer
@@ -951,10 +1050,7 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface & model,
     presolve_[i]=NULL;
   }
   // Put presolve option on
-  int i1=tuning&15;
-  int i2=tuning-i1;
-  i1 |= 8;
-  tuning=i1+i2;;
+  tuning |= 8;
   // clear original
   delete [] originalColumn_;
   delete [] originalRow_;
@@ -1430,8 +1526,8 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface & model,
     }
     if (allPlus)
       nPossible++;
-    int iUpper = (int) floor(upperValue+1.0e-5);
-    int iLower = (int) ceil(lowerValue-1.0e-5);
+    int iUpper = static_cast<int> (floor(upperValue+1.0e-5));
+    int iLower = static_cast<int> (ceil(lowerValue-1.0e-5));
     int state=0;
     if (upperValue<1.0e6) {
       if (iUpper==1-numberM1)
@@ -1440,7 +1536,7 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface & model,
         state=2;
       else if (iUpper<-numberM1)
         state=3;
-      if (fabs(((double) iUpper)-upperValue)>1.0e-9)
+      if (fabs((static_cast<double> (iUpper))-upperValue)>1.0e-9)
         state =-1;
     }
     if (!state&&lowerValue>-1.0e6) {
@@ -1450,7 +1546,7 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface & model,
         state=-2;
       else if (-iLower<-numberP1)
         state=-3;
-      if (fabs(((double) iLower)-lowerValue)>1.0e-9)
+      if (fabs((static_cast<double> (iLower))-lowerValue)>1.0e-9)
         state =-1;
     }
     if (good&&state>0) {
@@ -1517,7 +1613,8 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface & model,
     if (numberCliques) {
       handler_->message(CGL_CLIQUES,messages_)
         <<numberCliques
-        << ((double)(totalP1+totalM1))/((double) numberCliques)
+        << (static_cast<double>(totalP1+totalM1))/
+	(static_cast<double> (numberCliques))
         <<CoinMessageEol;
       //printf("%d of these could be converted to equality constraints\n",
       //     numberSlacks);
@@ -1614,9 +1711,9 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface & model,
 	    allInteger=false;
 	  if (allInteger&&fabs(value)<1.0e8) {
 	    if (!multiple)
-	      multiple = (int) fabs(value);
+	      multiple = static_cast<int> (fabs(value));
 	    else if (multiple>0)
-	      multiple = gcd(multiple,(int) fabs(value));
+	      multiple = gcd(multiple,static_cast<int> (fabs(value)));
 	  } else {
 	    allInteger=false;
 	  }
@@ -1727,7 +1824,10 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface & model,
     OsiPresolve * pinfo = new OsiPresolve();
     int presolveActions=0;
     // Allow dual stuff on integers
-    presolveActions=1;
+    // Allow stuff which may not unroll cleanly
+    presolveActions=1+16;
+    if ((tuning&32)!=0)
+      presolveActions |= 32;
     // Do not allow all +1 to be tampered with
     //if (allPlusOnes)
     //presolveActions |= 2;
@@ -1746,7 +1846,7 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface & model,
     oldModel->getStrParam(OsiSolverName,solverName);
     // Extend if you want other solvers to keep solution
     bool keepSolution=solverName=="clp";
-    presolvedModel = pinfo->presolvedModel(*oldModel,1.0e-8,true,5,prohibited_,keepSolution);
+    presolvedModel = pinfo->presolvedModel(*oldModel,1.0e-8,true,5,prohibited_,keepSolution,rowType_);
     oldModel->messageHandler()->setLogLevel(saveLogLevel);
     if (presolvedModel) {
       presolvedModel->messageHandler()->setLogLevel(saveLogLevel);
@@ -1973,7 +2073,8 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface & model,
       OsiPresolve * pinfo = new OsiPresolve();
       int presolveActions=0;
       // Allow dual stuff on integers
-      presolveActions=1;
+      // Allow stuff which may not unroll cleanly
+      presolveActions=1+16;
       // Do not allow all +1 to be tampered with
       //if (allPlusOnes)
       //presolveActions |= 2;
@@ -2001,10 +2102,12 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface & model,
       oldModel->getStrParam(OsiSolverName,solverName);
       // Extend if you want other solvers to keep solution
       bool keepSolution=solverName=="clp";
-      presolvedModel = pinfo->presolvedModel(*oldModel,1.0e-8,true,5,prohibited_,keepSolution);
+      presolvedModel = pinfo->presolvedModel(*oldModel,1.0e-8,true,5,
+					     prohibited_,keepSolution,rowType_);
       oldModel->messageHandler()->setLogLevel(saveLogLevel);
       if (!presolvedModel) {
         returnModel=NULL;
+	delete pinfo;
         break;
       }
       presolvedModel->messageHandler()->setLogLevel(saveLogLevel);
@@ -2031,6 +2134,11 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface & model,
       presolvedModel->setHintParam(OsiDoDualInInitial,false,OsiHintTry);
       presolvedModel->initialSolve();
       numberIterationsPre_ += presolvedModel->getIterationCount();
+      presolvedModel->setHintParam(OsiDoDualInInitial,saveTakeHint,saveStrength);
+      if (!presolvedModel->isProvenOptimal()) {
+        returnModel=NULL;
+        break;
+      }
       // maybe we can fix some
       int numberFixed = 
       reducedCostFix(*presolvedModel);
@@ -2038,11 +2146,6 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface & model,
       if (numberFixed)
 	printf("%d variables fixed on reduced cost\n",numberFixed);
 #endif
-      presolvedModel->setHintParam(OsiDoDualInInitial,saveTakeHint,saveStrength);
-      if (!presolvedModel->isProvenOptimal()) {
-        returnModel=NULL;
-        break;
-      }
       OsiSolverInterface * newModel = modified(presolvedModel,constraints,numberChanges,iPass-doInitialPresolve,numberModifiedPasses);
       returnModel=newModel;
       if (!newModel) {
@@ -2775,6 +2878,49 @@ CglPreProcess::tightenPrimalBounds(OsiSolverInterface & model,double factor)
                   }
                   if (fabs(value-newValue)>1.0e-12) {
                     numberChanges++;
+		    // BUT variable may have bound
+		    double rhsAdjust=0.0;
+		    if (gap>0.0) {
+		      // rowLower
+		      if (value>0.0) {
+			// new value is based on going up from lower bound
+			if (colLower[iColumn]) 
+			  rhsAdjust = colLower[iColumn]*(value-newValue);
+		      } else {
+			// new value is based on going down from upper bound
+			if (colUpper[iColumn]) 
+			  rhsAdjust = colUpper[iColumn]*(value-newValue);
+		      }
+		    } else {
+		      // rowUpper
+		      if (value<0.0) {
+			// new value is based on going up from lower bound
+			if (colLower[iColumn]) 
+			  rhsAdjust = colLower[iColumn]*(value-newValue);
+		      } else {
+			// new value is based on going down from upper bound
+			if (colUpper[iColumn]) 
+			  rhsAdjust = colUpper[iColumn]*(value-newValue);
+		      }
+		    }
+		    if (rhsAdjust) {
+#ifdef CLP_INVESTIGATE
+		      printf("FFor column %d bounds %g, %g on row %d bounds %g, %g coefficient was changed from %g to %g with rhs adjustment of %g\n",
+			     iColumn,colLower[iColumn],colUpper[iColumn],
+			     iRow,rowLower[iRow],rowUpper[iRow],
+			     value,newValue,rhsAdjust);
+#endif
+		      if (rowLower[iRow]>-1.0e20)
+			model.setRowLower(iRow,rowLower[iRow]-rhsAdjust);
+		      if (rowUpper[iRow]<1.0e20)
+			model.setRowUpper(iRow,rowUpper[iRow]-rhsAdjust);
+#ifdef CLP_INVESTIGATE
+		      printf("FFor column %d bounds %g, %g on row %d bounds %g, %g coefficient was changed from %g to %g with rhs adjustment of %g\n",
+			     iColumn,colLower[iColumn],colUpper[iColumn],
+			     iRow,rowLower[iRow],rowUpper[iRow],
+			     value,newValue,rhsAdjust);
+#endif
+		    }
                     element[j]=newValue;
 		    handler_->message(CGL_ELEMENTS_CHANGED2,messages_)
 		      <<iRow<<iColumn<<value<<newValue
@@ -2834,6 +2980,7 @@ CglPreProcess::postProcess(OsiSolverInterface & modelIn)
   originalModel_->getHintParam(OsiDoDualInInitial,
                         saveHint2,saveStrength2);
   OsiSolverInterface * clonedCopy=NULL;
+  double saveObjectiveValue = modelIn.getObjValue();
   if (modelIn.isProvenOptimal()) {
     OsiSolverInterface * modelM = &modelIn;
     // If some cuts add back rows
@@ -2985,7 +3132,8 @@ CglPreProcess::postProcess(OsiSolverInterface & modelIn)
 	  if (columnLower[iColumn]==columnUpper[iColumn])
 	    numberFixed++;
 	}
-	if (numberColumns>2000&&numberFixed<numberColumns) {
+	if (numberColumns>2000&&numberFixed<numberColumns&&
+	    numberFixed*5>numberColumns) {
 	  model->setHintParam(OsiDoPresolveInInitial,true,OsiHintTry);
 	}
       }
@@ -3245,14 +3393,53 @@ CglPreProcess::postProcess(OsiSolverInterface & modelIn)
   originalModel_->initialSolve();
   numberIterationsPost_ += originalModel_->getIterationCount();
   //printf("Time without basis %g seconds, %d iterations\n",CoinCpuTime()-time1,originalModel_->getIterationCount());
+  double objectiveValue = originalModel_->getObjValue();
+  double testObj = 1.0e-8*CoinMax(fabs(saveObjectiveValue),
+				  fabs(objectiveValue))+1.0e-4;
   if (!originalModel_->isProvenOptimal()) {
 #ifdef COIN_DEVELOP
     originalModel_->writeMps("bad3");
     printf("bad end unwind in postprocess\n");
 #endif
+    handler_->message(CGL_POST_INFEASIBLE,messages_)
+      <<CoinMessageEol;
+  } else if (fabs(saveObjectiveValue-objectiveValue)>testObj) {
+    handler_->message(CGL_POST_CHANGED,messages_)
+      <<saveObjectiveValue<<objectiveValue
+      <<CoinMessageEol;
   }
   originalModel_->setHintParam(OsiDoDualInInitial,saveHint2,saveStrength2);
   originalModel_->setHintParam(OsiDoPresolveInInitial,saveHint,saveStrength);
+}
+//-------------------------------------------------------------------
+// Returns the greatest common denominator of two 
+// positive integers, a and b, found using Euclid's algorithm 
+//-------------------------------------------------------------------
+static int gcd(int a, int b) 
+{
+  int remainder = -1;
+  // make sure a<=b (will always remain so)
+  if(a > b) {
+    // Swap a and b
+    int temp = a;
+    a = b;
+    b = temp;
+  }
+  // if zero then gcd is nonzero (zero may occur in rhs of packed)
+  if (!a) {
+    if (b) {
+      return b;
+    } else {
+      printf("**** gcd given two zeros!!\n");
+      abort();
+    }
+  }
+  while (remainder) {
+    remainder = b % a;
+    b = a;
+    a = remainder;
+  }
+  return b;
 }
 /* Return model with useful modifications.  
    If constraints true then adds any x+y=1 or x-y=0 constraints
@@ -3283,6 +3470,7 @@ CglPreProcess::modified(OsiSolverInterface * model,
   info.pass = 0;
   info.formulation_rows = numberRows;
   info.inTree = false;
+  info.options = !numberProhibited_ ? 0 : 2;
   info.randomNumberGenerator=&randomGenerator;
   info.strengthenRow= whichCut;
   // See if user asked for heavy probing
@@ -3419,8 +3607,224 @@ CglPreProcess::modified(OsiSolverInterface * model,
             if (!thisCut) {
               // put in old row
               int start=rowStart[iRow];
-              build.addRow(rowLength[iRow],column+start,rowElements+start,
-                           rowLower[iRow],rowUpper[iRow]);
+	      int kInt=-1;
+	      double newValue=0.0;
+	      if (!iPass&&!iBigPass) {
+		// worthwhile seeing if odd gcd
+		int end = start + rowLength[iRow];
+		double rhsAdjustment=0.0;
+		int nPosInt=0;
+		int nNegInt=0;
+		// Find largest integer coefficient
+		int k;
+		for ( k = start; k < end; ++k) {
+		  CoinBigIndex j = column[k];
+		  if (columnUpper[j]>columnLower[j]) {
+		    if (newModel->isInteger(j)) {
+		      if (rowElements[k]>0.0)
+			nPosInt++;
+		      else
+			nNegInt++;
+		    } else {
+		      break; // no good
+		    }
+		  } else {
+		    rhsAdjustment += columnLower[j]*rowElements[k];
+		  }
+		}
+		if (k==end) {
+		  // see if singleton coefficient can be strengthened
+		  if ((nPosInt==1&&nNegInt>1)||(nNegInt==1&&nPosInt>1)) {
+		    double lo;
+		    double up;
+		    if (rowLower[iRow]>-1.0e20)
+		      lo = rowLower[iRow]-rhsAdjustment;
+		    else
+		      lo=-COIN_DBL_MAX;
+		    if(rowUpper[iRow]<1.0e20)
+		      up = rowUpper[iRow]-rhsAdjustment;
+		    else
+		      up=COIN_DBL_MAX;
+		    double multiplier=1.0;
+		    if (nNegInt==1) {
+		      // swap signs
+		      multiplier=lo;
+		      lo=-up;
+		      up=-multiplier;
+		      multiplier=-1.0;
+		    }
+		    bool possible=true;
+		    double singletonValue=0;
+		    double scale = 4.0*5.0*6.0;
+		    int kGcd=-1;
+		    double smallestSum = 0.0;
+		    double largestSum = 0.0;
+		    for ( k = start; k < end; ++k) {
+		      CoinBigIndex j = column[k];
+		      double value=multiplier*rowElements[k];
+		      if (columnUpper[j]>columnLower[j]) {
+			if (value>0.0) {
+			  // singleton
+			  kInt=j;
+			  if (columnUpper[j]-columnLower[j]!=1.0) {
+			    possible = false;
+			    break;
+			  } else {
+			    singletonValue=value;
+			  }
+			} else {
+			  if (columnLower[j]>-1.0e10)
+			    smallestSum += value*columnLower[j];
+			  else
+			    smallestSum = -COIN_DBL_MAX;
+			  if (columnUpper[j]<-1.0e10)
+			    largestSum += value*columnUpper[j];
+			  else
+			    largestSum = COIN_DBL_MAX;
+			  value *=-scale;
+			  if (fabs(value-floor(value+0.5))>1.0e-12) {
+			    possible=false;
+			    break;
+			  } else {
+			    int kVal = static_cast<int> (floor(value+0.5));
+			    if (kGcd>0) 
+			      kGcd = gcd(kGcd,kVal);
+			    else
+			      kGcd=kVal;
+			  }
+			}
+		      }
+		    }
+		    if (possible) {
+		      double multiple = (static_cast<double> (kGcd))/scale;
+		      int interesting=0;
+		      double saveLo=lo;
+		      double saveUp=up;
+		      double nearestLo0=lo;
+		      double nearestUp0=up;
+		      double nearestLo1=lo;
+		      double nearestUp1=up;
+		      // adjust rhs for singleton 
+		      if (lo!=-COIN_DBL_MAX) {
+			// singleton at lb
+			lo -= columnLower[kInt]*singletonValue;
+			double exact = lo/multiple;
+			if (fabs(exact-floor(exact+0.5))>1.0e-4) {
+			  interesting +=1;
+			  nearestLo0 = ceil(exact)*multiple;
+			} 
+			// singleton at ub
+			lo -= singletonValue;
+			exact = lo/multiple;
+			if (fabs(exact-floor(exact+0.5))>1.0e-4) {
+			  interesting +=2;
+			  nearestLo1 = ceil(exact)*multiple;
+			}
+		      }
+		      if (up!=COIN_DBL_MAX) {
+			// singleton at lb
+			up -= columnLower[kInt]*singletonValue;
+			double exact = up/multiple;
+			if (fabs(exact-floor(exact+0.5))>1.0e-4) {
+			  interesting +=4;
+			  nearestUp0 = floor(exact)*multiple;
+			} 
+			// singleton at ub
+			up -= singletonValue;
+			exact = up/multiple;
+			if (fabs(exact-floor(exact+0.5))>1.0e-4) {
+			  interesting +=8;
+			  nearestUp1 = floor(exact)*multiple;
+			} 
+		      }
+		      if (interesting) {
+#ifdef CLP_INVESTIGATE
+			printf("Row %d interesting %d lo,up %g,%g singleton %d value %g bounds %g,%g - gcd %g\n",iRow,interesting,saveLo,saveUp,kInt,singletonValue,
+			       columnLower[kInt],columnUpper[kInt],multiple);
+			printf("Orig lo,up %g,%g %d\n",rowLower[iRow],rowUpper[iRow],end-start);
+			for ( k = start; k < end; ++k) {
+			  CoinBigIndex j = column[k];
+			  double value=multiplier*rowElements[k];
+			  printf(" (%d, %g - bds %g, %g)",j,value,
+				 columnLower[j],columnUpper[j]);
+			}
+			printf("\n");
+#endif
+			if(columnLower[kInt]) {
+#ifdef CLP_INVESTIGATE
+			  printf("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ\n"); //think
+#endif
+			  interesting=0;
+			}
+			newValue = singletonValue;
+			double newLoRhs = rowLower[iRow];
+			double newUpRhs = rowUpper[iRow];
+			if ((interesting&3)!=0) {
+			  newLoRhs = nearestLo0;
+			  newValue = nearestLo0-nearestLo1;
+			}
+			if (saveLo==saveUp&&((interesting&5)==5||(interesting&10)==10)) {
+#ifdef CLP_INVESTIGATE
+			  printf("INFEAS? ");
+#endif
+			  interesting=0; //ninfeas++;
+			}
+			if ((interesting&12)) {
+#ifdef CLP_INVESTIGATE
+			  double value2 = newValue;
+#endif
+			  newUpRhs = nearestUp0;
+			  newValue = nearestUp0-nearestUp1;
+#ifdef CLP_INVESTIGATE
+			  if (newValue!=value2) {
+			    printf("??? old newvalue %g ",newValue);
+			  }
+#endif
+			}
+#ifdef CLP_INVESTIGATE
+			printf("guess is new lo %g, new up %g, new value %g\n",
+			       newLoRhs,newUpRhs,newValue);
+#endif
+		      }
+		      // Just do mzzv11 case
+		      double exact = singletonValue/multiple;
+		      if (fabs(exact-floor(exact+0.5))<1.0e-5)
+			interesting &= ~2;
+		      if (!smallestSum&&interesting==2&&!saveLo&&saveUp>1.0e20) {
+			double newValue = multiple*floor(exact);
+			newValue *= multiplier;
+#ifdef CLP_INVESTIGATE
+			printf("New coefficient for %d will be %g\n",kInt,newValue);
+#endif
+		      } else {
+			// don't do
+			kInt=-1;
+		      }
+		    } else {
+		      kInt=-1;
+		    }
+		  }
+		}
+		// endgcd
+	      }
+	      int length = rowLength[iRow];
+	      if (kInt<0) {
+		build.addRow(length,column+start,rowElements+start,
+			     rowLower[iRow],rowUpper[iRow]);
+	      } else {
+		assert (newValue);
+		double * els = CoinCopyOfArray(rowElements+start,length);
+		for ( int k = 0; k < length; ++k) {
+		  int j = column[k+start];
+		  if (j==kInt) {
+		    els[k] = newValue;
+		    break;
+		  }
+		}
+		build.addRow(length,column+start,els,
+			     rowLower[iRow],rowUpper[iRow]);
+		delete [] els;
+	      }
 	      keepRow[iRow]=1;
             } else {
               // strengthens this row (should we check?)
@@ -3442,14 +3846,16 @@ CglPreProcess::modified(OsiSolverInterface * model,
                     nFree++;
                 }
                 if (n==nFree) {
-                  //printf("Original row %d %g <= ",iRow,rowLower[iRow]);
-                  //for ( i=0;i<n1;i++) 
-                  //printf("%g * x%d ",rowElements[start+i],column[start+i]);
-                  //printf("<= %g\n",rowUpper[iRow]);
-                  //printf("New %g <= ",lower);
-                  //for ( i=0;i<n;i++) 
-                  //printf("%g * x%d ",elementCut[i],columnCut[i]);
-                  //printf("<= %g\n",upper);
+#if 0
+                  printf("Original row %.8d %g <= ",iRow,rowLower[iRow]);
+                  for ( i=0;i<n1;i++) 
+		    printf("%g * x%d ",rowElements[start+i],column[start+i]);
+                  printf("<= %g\n",rowUpper[iRow]);
+                  printf("New                   %g <= ",lower);
+                  for ( i=0;i<n;i++) 
+		    printf("%g * x%d ",elementCut[i],columnCut[i]);
+                  printf("<= %g\n",upper);
+#endif
                 } else {
                   // can't use
                   n=-1;
@@ -3505,7 +3911,7 @@ CglPreProcess::modified(OsiSolverInterface * model,
         newModel->addRows(build);
         numberRows = newModel->getNumRows();
 	if (basis) {
-	  assert (numberRows=basis->getNumArtificial());
+	  assert (numberRows==basis->getNumArtificial());
 	  newModel->setWarmStart(basis);
 	  delete basis;
 	}
@@ -3566,7 +3972,7 @@ CglPreProcess::modified(OsiSolverInterface * model,
 	      int startV = toOne[v];
 	      int endV = toZero[v+1];
 	      for (int jv=startV;jv<endV;jv++) {
-		if(k==(int) entry[jv].sequence) {
+		if(k==static_cast<int> (entry[jv].sequence)) {
 		  int goingToOneV = entry[jv].oneFixed;
 		  double lo,up;
 		  if (!goingToOneV) {
@@ -3594,7 +4000,7 @@ CglPreProcess::modified(OsiSolverInterface * model,
 	      int startV = toZero[v];
 	      int endV = toOne[v];
 	      for (int jv=startV;jv<endV;jv++) {
-		if(k==(int) entry[jv].sequence) {
+		if(k==static_cast<int> (entry[jv].sequence)) {
 		  int goingToOneV = entry[jv].oneFixed;
 		  double lo,up;
 		  if (!goingToOneV) {
@@ -3632,7 +4038,7 @@ CglPreProcess::modified(OsiSolverInterface * model,
 	      int startV = toOne[v];
 	      int endV = toZero[v+1];
 	      for (int jv=startV;jv<endV;jv++) {
-		if(k==(int) entry[jv].sequence) {
+		if(k==static_cast<int> (entry[jv].sequence)) {
 		  int goingToOneV = entry[jv].oneFixed;
 		  double lo,up;
 		  if (goingToOneV) {
@@ -3660,7 +4066,7 @@ CglPreProcess::modified(OsiSolverInterface * model,
 	      int startV = toZero[v];
 	      int endV = toOne[v];
 	      for (int jv=startV;jv<endV;jv++) {
-		if(k==(int) entry[jv].sequence) {
+		if(k==static_cast<int> (entry[jv].sequence)) {
 		  int goingToOneV = entry[jv].oneFixed;
 		  double lo,up;
 		  if (goingToOneV) {
@@ -3787,12 +4193,30 @@ CglPreProcess::modified(OsiSolverInterface * model,
 	If solution needs to be refreshed, do resolve or initialSolve as appropriate.
       */
       if (needResolve) {
-	if (rebuilt)
+	if (rebuilt) {
+	  // basis shot to bits?
+	  //CoinWarmStartBasis *slack =
+	  //dynamic_cast<CoinWarmStartBasis *>(newModel->getEmptyWarmStart()) ;
+	  //newModel->setWarmStart(slack);
+	  //delete slack ;
 	  newModel->initialSolve() ;
-	else
+	} else {
 	  newModel->resolve() ;
+	}
 	numberIterationsPre_ += newModel->getIterationCount();
 	feasible = newModel->isProvenOptimal();
+	if (!feasible&&getCutoff()>1.0e20) {
+	  // Better double check
+	  CoinWarmStartBasis *slack =
+	    dynamic_cast<CoinWarmStartBasis *>(newModel->getEmptyWarmStart()) ;
+	  newModel->setWarmStart(slack);
+	  delete slack ;
+	  newModel->resolve() ;
+	  numberIterationsPre_ += newModel->getIterationCount();
+	  feasible = newModel->isProvenOptimal();
+	  //if (!feasible)
+	  //newModel->writeMpsNative("infeas.mps",NULL,NULL,2,1);
+	}
       }
       if (!feasible)
         break;
@@ -4241,6 +4665,28 @@ CglPreProcess::update(const OsiPresolve * pinfo,
   if (rowType_) {
     const int * original = pinfo->originalRows();
     int numberRows = solver->getNumRows();
+#ifdef COIN_DEVELOP
+    int nMarked1=0;
+    for (int i=0;i<pinfo->getNumRows();i++) {
+      if (rowType_[i])
+	nMarked1++;
+    }
+    int nMarked2=0;
+    int k=-1;
+    for (int i=0;i<numberRows;i++) {
+      int iRow = original[i];
+      if (iRow<i)
+	abort();
+      if (iRow<=k)
+	abort();
+      k=iRow;
+      if (rowType_[iRow])
+	nMarked2++;
+    }
+    if (nMarked1>nMarked2)
+      printf("Marked rows reduced from %d to %d\n",
+	     nMarked1,nMarked2);
+#endif
     for (int i=0;i<numberRows;i++) {
       int iRow = original[i];
       rowType_[i]=rowType_[iRow];
@@ -4298,9 +4744,9 @@ CglPreProcess::someFixed(OsiSolverInterface & model,
     }
   }
   CoinSort_2(dj,dj+number,sort);
-  int numberToFix = (int) (numberColumns *(1.0-fractionToKeep));
+  int numberToFix = static_cast<int> (numberColumns *(1.0-fractionToKeep));
   if (!fixContinuousAsWell)
-    numberToFix = (int) ((numberColumns-numberContinuous) *(1.0-fractionToKeep));
+    numberToFix = static_cast<int> ((numberColumns-numberContinuous) *(1.0-fractionToKeep));
   numberToFix = CoinMax(numberToFix,numberThrow);
   numberToFix = CoinMin(number,numberToFix);
   printf("%d columns fixed\n",numberToFix);

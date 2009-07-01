@@ -20,6 +20,13 @@ public:
   /** The number of rows in the original formulation. Some generators may not
       want to consider already generated rows when generating new ones. */
   int formulation_rows;
+  /** Options 
+      1 - treat costed integers as important
+      2 - switch off some stuff as variables semi-integer
+      4 - set global cut flag if at root node
+      8 - set global cut flag if at root node and first pass
+  */
+  int options;
   /// Set true if in tree (to avoid ambiguity at first branch)
   bool inTree;
   /** Replacement array.  Before Branch and Cut it may be beneficial to strengthen rows
@@ -94,6 +101,8 @@ public:
   virtual int initializeFixing(const OsiSolverInterface * model) ;
   /// Fix entries in a solver using implications
   int fixColumns(OsiSolverInterface & si) const;
+  /// Fix entries in a solver using implications for one variable
+  int fixColumns(int iColumn, int value, OsiSolverInterface & si) const;
   /// Packs down entries
   int packDown();
   /// Generate cuts from implications
